@@ -20,10 +20,12 @@ typedef void (*wifi_status_cb_t)(wifi_status_t status);
 
 /**
  * @brief Initialize and connect to WiFi
+ * @param ssid WiFi network name
+ * @param password WiFi password (can be empty string for open networks)
  * @param status_cb Callback for status updates (can be NULL)
  * @return true if initialization started successfully
  */
-bool wifi_init(wifi_status_cb_t status_cb);
+bool wifi_init(const char *ssid, const char *password, wifi_status_cb_t status_cb);
 
 /**
  * @brief Check if WiFi is connected

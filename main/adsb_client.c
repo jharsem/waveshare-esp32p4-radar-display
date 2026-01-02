@@ -29,6 +29,11 @@ static bool s_running = false;
 static uint32_t s_last_update_time = 0;
 static int s_current_interval_ms = ADSB_POLL_INTERVAL_MS;
 
+// Radar parameters (defaults from config)
+static float s_home_lat = HOME_LAT;
+static float s_home_lon = HOME_LON;
+static int s_radar_radius_nm = RADAR_RADIUS_NM;
+
 // Forward declarations
 static void adsb_poll_task(void *pvParameters);
 static esp_err_t http_event_handler(esp_http_client_event_t *evt);
@@ -42,6 +47,14 @@ void adsb_client_init(adsb_data_callback_t callback)
     s_last_update_time = 0;
     s_current_interval_ms = ADSB_POLL_INTERVAL_MS;
     ESP_LOGI(TAG, "ADSB client initialized");
+}
+
+void adsb_client_set_radar_params(float lat, float lon, int radius_nm)
+{
+    s_home_lat = lat;
+    s_home_lon = lon;
+    s_radar_radius_nm = radius_nm;
+    ESP_LOGI(TAG, "Radar params set: lat=%.4f, lon=%.4f, radius=%d NM", lat, lon, radius_nm);
 }
 
 void adsb_client_start(void)
@@ -120,10 +133,10 @@ static void adsb_poll_task(void *pvParameters)
 
 static bool fetch_and_parse_aircraft(void)
 {
-    // Build API URL
+    // Build API URL with runtime radar parameters
     char url[256];
     snprintf(url, sizeof(url), "%s/%.7f/%.7f/%d",
-             ADSB_API_URL, HOME_LAT, HOME_LON, RADAR_RADIUS_NM);
+             ADSB_API_URL, s_home_lat, s_home_lon, s_radar_radius_nm);
 
     ESP_LOGI(TAG, "Fetching: %s", url);
 

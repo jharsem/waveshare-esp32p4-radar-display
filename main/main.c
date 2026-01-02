@@ -12,6 +12,8 @@
 #include "bsp/esp-bsp.h"
 
 #include "radar_config.h"
+#include "nvsconfig.h"
+#include "settings_panel.h"
 #include "wifi.h"
 #include "radar_renderer.h"
 #include "adsb_client.h"
@@ -21,6 +23,9 @@ static const char *TAG = "main";
 
 // LVGL display handle
 static lv_display_t *s_display = NULL;
+
+// Current configuration
+static radar_config_t s_current_config;
 
 // Log heap memory stats for debugging
 static void log_heap_stats(const char *label)
@@ -89,6 +94,56 @@ static void adsb_data_callback(const adsb_aircraft_t *aircraft, int count)
     }
 }
 
+// Config button callback - open settings panel
+static void config_button_callback(void)
+{
+    ESP_LOGI(TAG, "CONFIG button pressed - opening settings panel");
+
+    bsp_display_lock(0);
+    settings_panel_create(lv_scr_act(), &s_current_config);
+    bsp_display_unlock();
+}
+
+// Settings save callback - called when user saves settings
+static void on_settings_saved(const radar_config_t *new_cfg)
+{
+    ESP_LOGI(TAG, "Configuration updated via settings panel");
+
+    // Save to NVS
+    esp_err_t ret = nvsconfig_write_config(new_cfg);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Configuration persisted to NVS");
+        nvsconfig_mark_first_boot_done();
+    } else {
+        ESP_LOGE(TAG, "Failed to save config to NVS: %s", esp_err_to_name(ret));
+    }
+
+    // Apply changes immediately
+    bsp_display_lock(0);
+    radar_renderer_set_label(new_cfg->display_label);
+    radar_renderer_set_show_labels(new_cfg->show_aircraft_labels);
+    bsp_display_unlock();
+
+    aircraft_store_set_home_location(new_cfg->home_lat, new_cfg->home_lon);
+    aircraft_store_set_radar_radius(new_cfg->radar_radius_nm);
+
+    // Update ADSB client radar parameters
+    adsb_client_set_radar_params(new_cfg->home_lat, new_cfg->home_lon, new_cfg->radar_radius_nm);
+
+    // If WiFi credentials changed, reconnect
+    bool wifi_changed = (strcmp(new_cfg->wifi_ssid, s_current_config.wifi_ssid) != 0 ||
+                         strcmp(new_cfg->wifi_password, s_current_config.wifi_password) != 0);
+
+    if (wifi_changed && strlen(new_cfg->wifi_ssid) > 0) {
+        ESP_LOGI(TAG, "WiFi credentials changed, reconnecting...");
+        // Reinitialize WiFi with new credentials
+        wifi_init(new_cfg->wifi_ssid, new_cfg->wifi_password, wifi_status_callback);
+    }
+
+    // Update current config
+    memcpy(&s_current_config, new_cfg, sizeof(radar_config_t));
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "=== ESP32-P4 ADSB Radar Display Starting ===");
@@ -144,11 +199,8 @@ void app_main(void)
         return;
     }
 
-    // Start the radar sweep animation
-    radar_renderer_start_sweep();
-
     bsp_display_unlock();
-    ESP_LOGI(TAG, "Radar display created with sweep animation");
+    ESP_LOGI(TAG, "Radar display created");
     log_heap_stats("after_radar");
 
     // Initialize aircraft store
@@ -157,21 +209,89 @@ void app_main(void)
     ESP_LOGI(TAG, "Aircraft store initialized");
     log_heap_stats("after_store");
 
-    // Initialize WiFi
-    ESP_LOGI(TAG, "Initializing WiFi...");
-    if (!wifi_init(wifi_status_callback)) {
-        ESP_LOGE(TAG, "Failed to initialize WiFi!");
+    // Initialize NVS configuration module
+    ESP_LOGI(TAG, "Initializing NVS configuration...");
+    ret = nvsconfig_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize NVS config!");
         return;
     }
-    ESP_LOGI(TAG, "WiFi initialization started");
-    log_heap_stats("after_wifi");
 
-    // Initialize and start ADSB client
-    ESP_LOGI(TAG, "Initializing ADSB client...");
-    adsb_client_init(adsb_data_callback);
-    adsb_client_start();
-    ESP_LOGI(TAG, "ADSB client started (polling every 10 seconds)");
-    log_heap_stats("after_adsb");
+    // Check if this is first boot or load from NVS
+    if (nvsconfig_is_first_boot()) {
+        ESP_LOGI(TAG, "First boot detected - using defaults");
+        // Use defaults from radar_config.h
+        memcpy(&s_current_config, &DEFAULT_CONFIG, sizeof(radar_config_t));
+        // Clear WiFi credentials to force configuration
+        s_current_config.wifi_ssid[0] = '\0';
+        s_current_config.wifi_password[0] = '\0';
+    } else {
+        ESP_LOGI(TAG, "Loading configuration from NVS...");
+        ret = nvsconfig_read_config(&s_current_config);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to load config from NVS, using defaults");
+            memcpy(&s_current_config, &DEFAULT_CONFIG, sizeof(radar_config_t));
+        } else {
+            ESP_LOGI(TAG, "Configuration loaded from NVS");
+        }
+    }
+
+    ESP_LOGI(TAG, "Configuration ready:");
+    ESP_LOGI(TAG, "  WiFi SSID: %s", s_current_config.wifi_ssid);
+    ESP_LOGI(TAG, "  Home: %.4f, %.4f", s_current_config.home_lat, s_current_config.home_lon);
+    ESP_LOGI(TAG, "  Radius: %d NM", s_current_config.radar_radius_nm);
+    ESP_LOGI(TAG, "  Show Labels: %s", s_current_config.show_aircraft_labels ? "Yes" : "No");
+    ESP_LOGI(TAG, "  Label: %s", s_current_config.display_label);
+    ESP_LOGI(TAG, "  Sweep: synced to API poll interval (%.1f sec)", ADSB_POLL_INTERVAL_MS / 1000.0f);
+    log_heap_stats("after_config");
+
+    // Register settings panel callback
+    settings_panel_set_save_callback(on_settings_saved);
+
+    // Register config button callback
+    radar_renderer_set_config_callback(config_button_callback);
+
+    // Apply configuration to radar display
+    bsp_display_lock(0);
+    radar_renderer_set_label(s_current_config.display_label);
+    // Sync sweep with API poll interval (10 seconds)
+    radar_renderer_set_sweep_rate(ADSB_POLL_INTERVAL_MS / 1000.0f);
+    radar_renderer_set_show_labels(s_current_config.show_aircraft_labels);
+    bsp_display_unlock();
+
+    // Start the radar sweep animation (after setting sweep rate)
+    radar_renderer_start_sweep();
+    ESP_LOGI(TAG, "Radar sweep started (%.1f sec per rotation)", ADSB_POLL_INTERVAL_MS / 1000.0f);
+
+    // Apply configuration to aircraft store
+    aircraft_store_set_home_location(s_current_config.home_lat, s_current_config.home_lon);
+    aircraft_store_set_radar_radius(s_current_config.radar_radius_nm);
+
+    // Check if WiFi credentials exist
+    if (strlen(s_current_config.wifi_ssid) == 0) {
+        ESP_LOGW(TAG, "No WiFi credentials - opening settings panel for first-time setup");
+        bsp_display_lock(0);
+        settings_panel_create(lv_scr_act(), &s_current_config);
+        bsp_display_unlock();
+        ESP_LOGI(TAG, "Waiting for user to configure WiFi via settings panel...");
+    } else {
+        // Initialize WiFi with loaded configuration
+        ESP_LOGI(TAG, "Initializing WiFi with saved credentials...");
+        if (!wifi_init(s_current_config.wifi_ssid, s_current_config.wifi_password, wifi_status_callback)) {
+            ESP_LOGE(TAG, "Failed to initialize WiFi!");
+            return;
+        }
+        ESP_LOGI(TAG, "WiFi initialization started");
+        log_heap_stats("after_wifi");
+
+        // Initialize and start ADSB client
+        ESP_LOGI(TAG, "Initializing ADSB client...");
+        adsb_client_init(adsb_data_callback);
+        adsb_client_set_radar_params(s_current_config.home_lat, s_current_config.home_lon, s_current_config.radar_radius_nm);
+        adsb_client_start();
+        ESP_LOGI(TAG, "ADSB client started (polling every 10 seconds)");
+        log_heap_stats("after_adsb");
+    }
 
     ESP_LOGI(TAG, "=== Phase 7: Aircraft Rendering Complete ===");
 

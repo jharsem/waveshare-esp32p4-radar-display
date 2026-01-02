@@ -18,6 +18,11 @@ static tracked_aircraft_t s_aircraft[MAX_AIRCRAFT];
 static int s_active_count = 0;
 static SemaphoreHandle_t s_mutex = NULL;
 
+// Home location (set at runtime)
+static float s_home_lat = HOME_LAT;  // Default from radar_config.h
+static float s_home_lon = HOME_LON;
+static int s_radar_radius_nm = RADAR_RADIUS_NM;  // Default radar radius
+
 // Forward declarations
 static float haversine_distance_nm(float lat1, float lon1, float lat2, float lon2);
 static float calculate_bearing(float lat1, float lon1, float lat2, float lon2);
@@ -36,6 +41,19 @@ void aircraft_store_init(void)
     }
 
     ESP_LOGI(TAG, "Aircraft store initialized (max %d aircraft)", MAX_AIRCRAFT);
+}
+
+void aircraft_store_set_home_location(float lat, float lon)
+{
+    s_home_lat = lat;
+    s_home_lon = lon;
+    ESP_LOGI(TAG, "Home location set to: %.6f, %.6f", lat, lon);
+}
+
+void aircraft_store_set_radar_radius(int radius_nm)
+{
+    s_radar_radius_nm = radius_nm;
+    ESP_LOGI(TAG, "Radar radius set to: %d NM", radius_nm);
 }
 
 void aircraft_store_update(const void *aircraft_data, int count)
@@ -90,12 +108,12 @@ void aircraft_store_update(const void *aircraft_data, int count)
 
         // Compute distance and bearing
         s_aircraft[idx].distance_nm = haversine_distance_nm(
-            HOME_LAT, HOME_LON,
+            s_home_lat, s_home_lon,
             aircraft[i].lat, aircraft[i].lon
         );
 
         s_aircraft[idx].bearing_deg = calculate_bearing(
-            HOME_LAT, HOME_LON,
+            s_home_lat, s_home_lon,
             aircraft[i].lat, aircraft[i].lon
         );
 
@@ -252,8 +270,8 @@ static void polar_to_screen(float distance_nm, float bearing_deg, int *out_x, in
     // Bearing: 0° = North, increases clockwise
     // Screen: (0,0) = top-left, X right, Y down
 
-    // Pixels per nautical mile
-    const float pixels_per_nm = (float)RADAR_DISPLAY_RADIUS / (float)RADAR_RADIUS_NM;
+    // Pixels per nautical mile (using runtime radar radius)
+    const float pixels_per_nm = (float)RADAR_DISPLAY_RADIUS / (float)s_radar_radius_nm;
 
     // Calculate radius in pixels
     float radius_px = distance_nm * pixels_per_nm;

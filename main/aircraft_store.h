@@ -43,6 +43,19 @@ typedef struct {
 void aircraft_store_init(void);
 
 /**
+ * @brief Set home location for distance/bearing calculations
+ * @param lat Home latitude in decimal degrees (-90 to +90)
+ * @param lon Home longitude in decimal degrees (-180 to +180)
+ */
+void aircraft_store_set_home_location(float lat, float lon);
+
+/**
+ * @brief Set radar radius for pixel scaling
+ * @param radius_nm Radar radius in nautical miles
+ */
+void aircraft_store_set_radar_radius(int radius_nm);
+
+/**
  * @brief Update aircraft from ADSB data
  * Computes distance, bearing, and screen coordinates
  * @param aircraft Array of ADSB aircraft

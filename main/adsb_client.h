@@ -31,8 +31,16 @@ typedef void (*adsb_data_callback_t)(const adsb_aircraft_t *aircraft, int count)
 void adsb_client_init(adsb_data_callback_t callback);
 
 /**
+ * @brief Set radar parameters (home location and radius)
+ * @param lat Home latitude
+ * @param lon Home longitude
+ * @param radius_nm Radar radius in nautical miles
+ */
+void adsb_client_set_radar_params(float lat, float lon, int radius_nm);
+
+/**
  * @brief Start the ADSB polling task
- * Polls API every 10 seconds for aircraft within 50nm
+ * Polls API every 10 seconds for aircraft within configured radius
  */
 void adsb_client_start(void);
 

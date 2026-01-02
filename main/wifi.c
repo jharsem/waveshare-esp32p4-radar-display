@@ -12,6 +12,7 @@
 #include "esp_netif.h"
 #include "esp_sntp.h"
 #include "esp_log.h"
+#include <string.h>
 
 static const char *TAG = "wifi";
 
@@ -32,7 +33,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 static void time_sync_notification_cb(struct timeval *tv);
 static void update_status(wifi_status_t new_status);
 
-bool wifi_init(wifi_status_cb_t status_cb)
+bool wifi_init(const char *ssid, const char *password, wifi_status_cb_t status_cb)
 {
     s_status_callback = status_cb;
     s_wifi_event_group = xEventGroupCreate();
@@ -65,19 +66,17 @@ bool wifi_init(wifi_status_cb_t status_cb)
                                                         NULL,
                                                         &instance_got_ip));
 
-    // Configure WiFi
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = WIFI_SSID,
-            .password = WIFI_PASSWORD,
-            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
-        },
-    };
+    // Configure WiFi with provided credentials
+    wifi_config_t wifi_config = {0};
+    strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid) - 1);
+    strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password) - 1);
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
 
     // Start WiFi
-    ESP_LOGI(TAG, "Starting WiFi, connecting to %s...", WIFI_SSID);
+    ESP_LOGI(TAG, "Starting WiFi, connecting to %s...", ssid);
     update_status(WIFI_STATUS_CONNECTING);
     ESP_ERROR_CHECK(esp_wifi_start());
 

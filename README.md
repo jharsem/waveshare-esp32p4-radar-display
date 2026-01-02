@@ -8,11 +8,12 @@ A classic air traffic control radar display showing live aircraft within 50nm of
 
 - 🎯 Live ADSB aircraft tracking from [adsb.lol](https://adsb.lol)
 - 🎨 Color-coded aircraft by altitude (yellow/orange/white)
-- 🔄 Smooth 60-second rotating sweep animation
+- 🔄 Smooth configurable rotating sweep animation (default 10s)
 - 📏 Distance rings at 10nm, 25nm, 50nm
 - 🧭 Cardinal direction markers
 - ✈️ Displays up to 64 aircraft simultaneously
 - 📊 Real-time aircraft count display
+- 💾 **SD card configuration** - Change WiFi, location, and display settings without recompiling
 
 ## Hardware
 
@@ -51,6 +52,33 @@ idf.py build flash monitor
 
 ### Configuration
 
+**Option 1: SD Card Configuration (Recommended)**
+
+The easiest way to configure the radar is using an SD card:
+
+1. Copy `config.txt.example` to your SD card as `config.txt`
+2. Edit `config.txt` with your settings:
+
+```ini
+# WiFi Settings
+WIFI_SSID=YourNetworkName
+WIFI_PASSWORD=YourPassword
+
+# Home Location (decimal degrees)
+HOME_LAT=-33.8127201
+HOME_LON=151.2059618
+
+# Radar Display Settings
+RADAR_RADIUS_NM=50
+SWEEP_SECONDS=10.0
+DISPLAY_LABEL=RADAR - 50NM
+```
+
+3. Insert SD card into the ESP32-P4 module
+4. Power on - configuration loads automatically!
+
+**Option 2: Compile-Time Configuration (Legacy)**
+
 Edit `main/radar_config.h` to customize:
 
 ```c
@@ -65,6 +93,8 @@ Edit `main/radar_config.h` to customize:
 #define WIFI_SSID "your-network"
 #define WIFI_PASSWORD "your-password"
 ```
+
+Note: SD card configuration overrides compiled-in defaults. If no SD card is present or `config.txt` is missing, the system uses the values from `radar_config.h`.
 
 ## How It Works
 
@@ -91,13 +121,15 @@ Edit `main/radar_config.h` to customize:
 radar_display/
 ├── main/
 │   ├── main.c              # Application entry point
-│   ├── radar_config.h      # Configuration constants
+│   ├── radar_config.h      # Default configuration constants
+│   ├── config_loader.c/h   # SD card configuration loader
 │   ├── wifi.c/h            # WiFi + NTP
 │   ├── adsb_client.c/h     # ADSB API client
 │   ├── aircraft_store.c/h  # Aircraft tracking + coordinates
 │   └── radar_renderer.c/h  # Radar visualization (LVGL)
 ├── components/
 │   └── bsp_extra/          # Board support extensions
+├── config.txt.example      # Example SD card configuration
 ├── CMakeLists.txt
 ├── sdkconfig.defaults
 └── partitions.csv
@@ -141,6 +173,7 @@ idf.py monitor
 ```
 
 Look for:
+- SD card mounting and configuration loading messages
 - WiFi connection status
 - ADSB API polling messages
 - Aircraft count updates
