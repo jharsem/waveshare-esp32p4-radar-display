@@ -94,7 +94,8 @@ A settings menu will allow changing WiFi credentials, home location, radar radiu
 ## Display Guide
 
 **Aircraft Colors:**
-- **Yellow** - Low altitude (< 10,000 ft)
+- **Dark Grey** - On ground/taxiing (< 50 ft)
+- **Yellow** - Low altitude (50 - 10,000 ft)
 - **Orange** - Medium altitude (10,000 - 25,000 ft)
 - **White** - High altitude (> 25,000 ft)
 

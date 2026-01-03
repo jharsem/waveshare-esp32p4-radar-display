@@ -616,16 +616,19 @@ void radar_renderer_update_aircraft(const void *aircraft_data, int count)
 static lv_color_t get_altitude_color(int altitude_ft)
 {
     // Color-code by altitude:
-    // Yellow: < 10,000 ft (low)
+    // Light grey: < 50 ft (on ground/taxiing)
+    // Yellow: 50 - 10,000 ft (low)
     // Orange: 10,000 - 25,000 ft (medium)
     // White: > 25,000 ft (high)
 
-    if (altitude_ft < 10000) {
-        return lv_color_make(0xFF, 0xFF, 0x00);  // Yellow
-    } else if (altitude_ft < 25000) {
-        return lv_color_make(0xFF, 0x80, 0x00);  // Orange
+    if (altitude_ft < ALT_GROUND_THRESHOLD) {
+        return lv_color_make(COLOR_GROUND_R, COLOR_GROUND_G, COLOR_GROUND_B);  // Light grey
+    } else if (altitude_ft < ALT_LOW_THRESHOLD) {
+        return lv_color_make(COLOR_LOW_ALT_R, COLOR_LOW_ALT_G, COLOR_LOW_ALT_B);  // Yellow
+    } else if (altitude_ft < ALT_MED_THRESHOLD) {
+        return lv_color_make(COLOR_MED_ALT_R, COLOR_MED_ALT_G, COLOR_MED_ALT_B);  // Orange
     } else {
-        return lv_color_make(0xFF, 0xFF, 0xFF);  // White
+        return lv_color_make(COLOR_HIGH_ALT_R, COLOR_HIGH_ALT_G, COLOR_HIGH_ALT_B);  // White
     }
 }
 
