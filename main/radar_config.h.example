@@ -64,7 +64,11 @@
 #define COLOR_SWEEP_B 0x00
 
 // Aircraft blip colors by altitude
-#define COLOR_LOW_ALT_R 0xFF   // Yellow (< 10,000 ft)
+#define COLOR_GROUND_R 0x50    // Dark grey (< 50 ft - on ground/taxiing)
+#define COLOR_GROUND_G 0x50
+#define COLOR_GROUND_B 0x50
+
+#define COLOR_LOW_ALT_R 0xFF   // Yellow (50 - 10,000 ft)
 #define COLOR_LOW_ALT_G 0xD7
 #define COLOR_LOW_ALT_B 0x00
 
@@ -77,6 +81,7 @@
 #define COLOR_HIGH_ALT_B 0xFF
 
 // Aircraft altitude thresholds (feet)
+#define ALT_GROUND_THRESHOLD 50
 #define ALT_LOW_THRESHOLD 10000
 #define ALT_MED_THRESHOLD 25000
 
@@ -88,3 +93,25 @@
 // Timing
 #define UI_UPDATE_INTERVAL_MS 1000      // Status bar update rate
 #define SWEEP_TIMER_MS (1000 / SWEEP_ROTATION_HZ)  // 16ms for 60Hz
+
+// Configuration structure for persistent storage
+typedef struct {
+    char wifi_ssid[64];        // WiFi SSID (max 63 chars + null)
+    char wifi_password[64];    // WiFi password (max 63 chars + null)
+    float home_lat;            // Home location latitude
+    float home_lon;            // Home location longitude
+    int radar_radius_nm;       // Radar radius in nautical miles
+    char display_label[32];    // Display label (max 31 chars + null)
+    bool show_aircraft_labels; // Show aircraft callsign/altitude labels
+} radar_config_t;
+
+// Default configuration (compile-time values)
+static const radar_config_t DEFAULT_CONFIG = {
+    .wifi_ssid = WIFI_SSID,
+    .wifi_password = WIFI_PASSWORD,
+    .home_lat = HOME_LAT,
+    .home_lon = HOME_LON,
+    .radar_radius_nm = RADAR_RADIUS_NM,
+    .display_label = "RADAR - 50NM",
+    .show_aircraft_labels = true
+};
