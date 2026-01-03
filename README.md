@@ -2,6 +2,8 @@
 
 A classic air traffic control radar display showing live aircraft within 50nm of Sydney, Australia.
 
+![Radar Display](docs/imgs/radar_image.jpg)
+
 ![Status](https://img.shields.io/badge/status-production-brightgreen) ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.5.1-blue)
 
 ## Features
@@ -13,7 +15,7 @@ A classic air traffic control radar display showing live aircraft within 50nm of
 - 🧭 Cardinal direction markers
 - ✈️ Displays up to 64 aircraft simultaneously
 - 📊 Real-time aircraft count display
-- 💾 **SD card configuration** - Change WiFi, location, and display settings without recompiling
+- 💾 **NVS persistent configuration** - Settings stored in flash memory, retained across reboots
 
 ## Hardware
 
@@ -52,34 +54,13 @@ idf.py build flash monitor
 
 ### Configuration
 
-**Option 1: SD Card Configuration (Recommended)**
+**NVS Persistent Configuration**
 
-The easiest way to configure the radar is using an SD card:
+The radar display uses NVS (Non-Volatile Storage) to persist configuration settings across reboots. On first boot, default values from `main/radar_config.h` are written to NVS.
 
-1. Copy `config.txt.example` to your SD card as `config.txt`
-2. Edit `config.txt` with your settings:
+**Setting Initial Configuration:**
 
-```ini
-# WiFi Settings
-WIFI_SSID=YourNetworkName
-WIFI_PASSWORD=YourPassword
-
-# Home Location (decimal degrees)
-HOME_LAT=-33.8127201
-HOME_LON=151.2059618
-
-# Radar Display Settings
-RADAR_RADIUS_NM=50
-SWEEP_SECONDS=10.0
-DISPLAY_LABEL=RADAR - 50NM
-```
-
-3. Insert SD card into the ESP32-P4 module
-4. Power on - configuration loads automatically!
-
-**Option 2: Compile-Time Configuration (Legacy)**
-
-Edit `main/radar_config.h` to customize:
+Edit `main/radar_config.h` before building:
 
 ```c
 // Home position (default: Sydney, Australia)
@@ -94,7 +75,13 @@ Edit `main/radar_config.h` to customize:
 #define WIFI_PASSWORD "your-password"
 ```
 
-Note: SD card configuration overrides compiled-in defaults. If no SD card is present or `config.txt` is missing, the system uses the values from `radar_config.h`.
+These values are automatically saved to NVS on first boot and will persist across power cycles.
+
+**Runtime Configuration (Future):**
+
+A settings menu will allow changing WiFi credentials, home location, radar radius, and display labels without reflashing. For now, to change settings after initial configuration, you can either:
+- Flash with `idf.py erase-flash` to trigger a fresh first boot
+- Modify the code to call `nvsconfig_write_config()` with new values
 
 ## How It Works
 
@@ -121,15 +108,14 @@ Note: SD card configuration overrides compiled-in defaults. If no SD card is pre
 radar_display/
 ├── main/
 │   ├── main.c              # Application entry point
-│   ├── radar_config.h      # Default configuration constants
-│   ├── config_loader.c/h   # SD card configuration loader
+│   ├── radar_config.h      # Configuration structure + defaults
+│   ├── nvsconfig.c/h       # NVS persistent storage
 │   ├── wifi.c/h            # WiFi + NTP
 │   ├── adsb_client.c/h     # ADSB API client
 │   ├── aircraft_store.c/h  # Aircraft tracking + coordinates
 │   └── radar_renderer.c/h  # Radar visualization (LVGL)
 ├── components/
 │   └── bsp_extra/          # Board support extensions
-├── config.txt.example      # Example SD card configuration
 ├── CMakeLists.txt
 ├── sdkconfig.defaults
 └── partitions.csv
@@ -173,7 +159,7 @@ idf.py monitor
 ```
 
 Look for:
-- SD card mounting and configuration loading messages
+- NVS configuration loading messages
 - WiFi connection status
 - ADSB API polling messages
 - Aircraft count updates
