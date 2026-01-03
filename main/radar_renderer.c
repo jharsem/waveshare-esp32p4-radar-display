@@ -5,10 +5,12 @@
 #include "radar_renderer.h"
 #include "aircraft_store.h"
 #include "radar_config.h"
+#include "wifi.h"
 #include "bsp/esp-bsp.h"
 #include "esp_log.h"
 #include <math.h>
 #include <string.h>
+#include <time.h>
 
 static const char *TAG = "radar_renderer";
 
@@ -30,6 +32,15 @@ static lv_obj_t *s_cardinal_s = NULL;
 static lv_obj_t *s_cardinal_w = NULL;
 static lv_obj_t *s_sweep_line = NULL;
 static lv_obj_t *s_sweep_trail = NULL;
+
+// Distance ring labels (12 total: 3 rings × 4 positions)
+static lv_obj_t *s_ring_labels[12] = {NULL};
+
+// Clock display
+static lv_obj_t *s_clock_label = NULL;
+static lv_timer_t *s_clock_timer = NULL;
+static int8_t s_timezone_offset = 0;
+static char s_clock_buffer[24] = "Syncing...";
 
 // Config button
 static lv_obj_t *s_config_button = NULL;
@@ -62,10 +73,13 @@ static lv_point_precise_t s_velocity_points[MAX_AIRCRAFT_BLIPS][2];
 // Forward declarations
 static void create_distance_rings(lv_obj_t *parent);
 static void create_cardinal_markers(lv_obj_t *parent);
+static void create_distance_ring_labels(lv_obj_t *parent);
+static void create_clock_display(lv_obj_t *parent);
 static void create_sweep_elements(lv_obj_t *parent);
 static void create_config_button(lv_obj_t *parent);
 static void config_button_event_callback(lv_event_t *e);
 static void sweep_timer_callback(lv_timer_t *timer);
+static void clock_timer_callback(lv_timer_t *timer);
 static lv_color_t get_altitude_color(int altitude_ft);
 static int find_blip(const char *hex);
 static void delete_blip(int index);
@@ -103,6 +117,12 @@ bool radar_renderer_init(lv_obj_t *parent)
 
     // Create cardinal direction markers (N, E, S, W)
     create_cardinal_markers(s_radar_container);
+
+    // Create distance ring labels (10nm, 25nm, 50nm)
+    create_distance_ring_labels(s_radar_container);
+
+    // Create clock display beneath North marker
+    create_clock_display(s_radar_container);
 
     // Create sweep line and trail
     create_sweep_elements(s_radar_container);
@@ -328,6 +348,63 @@ static void create_cardinal_markers(lv_obj_t *parent)
     ESP_LOGI(TAG, "Cardinal markers created: N, E, S, W");
 }
 
+static void create_distance_ring_labels(lv_obj_t *parent)
+{
+    typedef struct {
+        int ring_radius;
+        const char *text;
+    } ring_label_config_t;
+
+    static const ring_label_config_t RING_CONFIGS[3] = {
+        {RING_10NM_RADIUS, "10nm"},
+        {RING_25NM_RADIUS, "25nm"},
+        {RING_50NM_RADIUS, "50nm"}
+    };
+
+    static const float LABEL_ANGLES[4] = {45.0f, 135.0f, 225.0f, 315.0f};
+    const int LABEL_OFFSET = 12;  // Pixels outside ring
+
+    for (int ring = 0; ring < 3; ring++) {
+        int label_radius = RING_CONFIGS[ring].ring_radius + LABEL_OFFSET;
+
+        for (int pos = 0; pos < 4; pos++) {
+            int label_idx = ring * 4 + pos;
+            float angle_deg = LABEL_ANGLES[pos];
+            float angle_rad = (angle_deg - 90.0f) * M_PI / 180.0f;
+
+            int x = SCREEN_CENTER_X + (int)(label_radius * cosf(angle_rad));
+            int y = SCREEN_CENTER_Y + (int)(label_radius * sinf(angle_rad));
+
+            s_ring_labels[label_idx] = lv_label_create(parent);
+            lv_label_set_text(s_ring_labels[label_idx], RING_CONFIGS[ring].text);
+            lv_obj_set_style_text_color(s_ring_labels[label_idx],
+                                         lv_color_make(0xAA, 0xAA, 0xAA), 0);
+            lv_obj_set_style_text_font(s_ring_labels[label_idx],
+                                        &lv_font_montserrat_12, 0);
+
+            // Center text (update layout to get actual dimensions)
+            lv_obj_update_layout(s_ring_labels[label_idx]);
+            int width = lv_obj_get_width(s_ring_labels[label_idx]);
+            int height = lv_obj_get_height(s_ring_labels[label_idx]);
+            lv_obj_set_pos(s_ring_labels[label_idx], x - width/2, y - height/2);
+        }
+    }
+
+    ESP_LOGI(TAG, "Distance ring labels created (12 labels)");
+}
+
+static void create_clock_display(lv_obj_t *parent)
+{
+    s_clock_label = lv_label_create(parent);
+    lv_label_set_text(s_clock_label, s_clock_buffer);
+    lv_obj_set_style_text_color(s_clock_label,
+                                 lv_color_make(0xAA, 0xAA, 0xAA), 0);
+    lv_obj_set_style_text_font(s_clock_label, &lv_font_montserrat_16, 0);
+    lv_obj_align(s_clock_label, LV_ALIGN_TOP_MID, 0, 65);
+
+    ESP_LOGI(TAG, "Clock display created");
+}
+
 static void create_sweep_elements(lv_obj_t *parent)
 {
     // Create sweep line from center to outer edge
@@ -450,6 +527,44 @@ static void sweep_timer_callback(lv_timer_t *timer)
         arc_rotation -= 360;
     }
     lv_arc_set_rotation(s_sweep_trail, arc_rotation);
+}
+
+static void clock_timer_callback(lv_timer_t *timer)
+{
+    (void)timer;
+
+    if (!wifi_is_time_synced()) {
+        return;  // Keep showing "Syncing..."
+    }
+
+    time_t now;
+    struct tm timeinfo;
+    time(&now);
+
+    // Apply timezone offset
+    now += s_timezone_offset * 3600;
+    gmtime_r(&now, &timeinfo);
+
+    // Format: "HH:MM:SS UTC+X"
+    if (s_timezone_offset == 0) {
+        snprintf(s_clock_buffer, sizeof(s_clock_buffer),
+                 "%02d:%02d:%02d UTC",
+                 timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+    } else if (s_timezone_offset > 0) {
+        snprintf(s_clock_buffer, sizeof(s_clock_buffer),
+                 "%02d:%02d:%02d UTC+%d",
+                 timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec,
+                 s_timezone_offset);
+    } else {
+        snprintf(s_clock_buffer, sizeof(s_clock_buffer),
+                 "%02d:%02d:%02d UTC%d",
+                 timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec,
+                 s_timezone_offset);
+    }
+
+    if (s_clock_label != NULL) {
+        lv_label_set_text(s_clock_label, s_clock_buffer);
+    }
 }
 
 void radar_renderer_update_aircraft(const void *aircraft_data, int count)
@@ -662,4 +777,27 @@ static void delete_blip(int index)
     }
     memset(s_blips[index].hex, 0, sizeof(s_blips[index].hex));
     s_blips[index].active = false;
+}
+
+void radar_renderer_start_clock(void)
+{
+    if (s_clock_timer == NULL) {
+        s_clock_timer = lv_timer_create(clock_timer_callback, 1000, NULL);
+        ESP_LOGI(TAG, "Clock timer started (1 Hz)");
+    }
+}
+
+void radar_renderer_set_timezone(int8_t offset_hours)
+{
+    if (offset_hours < -12 || offset_hours > 14) {
+        ESP_LOGW(TAG, "Invalid timezone: %d", offset_hours);
+        return;
+    }
+
+    s_timezone_offset = offset_hours;
+    ESP_LOGI(TAG, "Timezone set to UTC%+d", offset_hours);
+
+    if (s_clock_timer != NULL) {
+        clock_timer_callback(s_clock_timer);
+    }
 }

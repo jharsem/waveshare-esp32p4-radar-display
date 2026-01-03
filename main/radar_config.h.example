@@ -10,6 +10,9 @@
 
 #pragma once
 
+#include <stdint.h>
+#include <stdbool.h>
+
 // Home location (Sydney, Australia)
 // Change these to your location for accurate radar centering
 #define HOME_LAT -33.8127201f
@@ -103,6 +106,7 @@ typedef struct {
     int radar_radius_nm;       // Radar radius in nautical miles
     char display_label[32];    // Display label (max 31 chars + null)
     bool show_aircraft_labels; // Show aircraft callsign/altitude labels
+    int8_t timezone_offset_hours; // Timezone offset from UTC (-12 to +14)
 } radar_config_t;
 
 // Default configuration (compile-time values)
@@ -113,5 +117,6 @@ static const radar_config_t DEFAULT_CONFIG = {
     .home_lon = HOME_LON,
     .radar_radius_nm = RADAR_RADIUS_NM,
     .display_label = "RADAR - 50NM",
-    .show_aircraft_labels = true
+    .show_aircraft_labels = true,
+    .timezone_offset_hours = 0  // Default to UTC
 };

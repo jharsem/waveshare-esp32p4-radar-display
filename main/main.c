@@ -122,6 +122,7 @@ static void on_settings_saved(const radar_config_t *new_cfg)
     bsp_display_lock(0);
     radar_renderer_set_label(new_cfg->display_label);
     radar_renderer_set_show_labels(new_cfg->show_aircraft_labels);
+    radar_renderer_set_timezone(new_cfg->timezone_offset_hours);
     bsp_display_unlock();
 
     aircraft_store_set_home_location(new_cfg->home_lat, new_cfg->home_lon);
@@ -257,11 +258,16 @@ void app_main(void)
     // Sync sweep with API poll interval (10 seconds)
     radar_renderer_set_sweep_rate(ADSB_POLL_INTERVAL_MS / 1000.0f);
     radar_renderer_set_show_labels(s_current_config.show_aircraft_labels);
+    radar_renderer_set_timezone(s_current_config.timezone_offset_hours);
     bsp_display_unlock();
 
     // Start the radar sweep animation (after setting sweep rate)
     radar_renderer_start_sweep();
     ESP_LOGI(TAG, "Radar sweep started (%.1f sec per rotation)", ADSB_POLL_INTERVAL_MS / 1000.0f);
+
+    // Start the clock display
+    radar_renderer_start_clock();
+    ESP_LOGI(TAG, "Clock display started");
 
     // Apply configuration to aircraft store
     aircraft_store_set_home_location(s_current_config.home_lat, s_current_config.home_lon);

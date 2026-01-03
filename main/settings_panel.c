@@ -12,6 +12,24 @@
 
 static const char *TAG = "settings_panel";
 
+// Timezone dropdown options (newline-separated)
+static const char *TIMEZONE_OPTIONS =
+    "UTC-12\nUTC-11\nUTC-10\nUTC-9\nUTC-8\nUTC-7\nUTC-6\n"
+    "UTC-5\nUTC-4\nUTC-3\nUTC-2\nUTC-1\nUTC\n"
+    "UTC+1\nUTC+2\nUTC+3\nUTC+4\nUTC+5\nUTC+6\n"
+    "UTC+7\nUTC+8\nUTC+9\nUTC+10\nUTC+11\nUTC+12\nUTC+13\nUTC+14";
+
+// Helper functions for timezone offset conversion
+static int timezone_offset_to_index(int8_t offset)
+{
+    return offset + 12;  // -12→0, 0→12, +14→26
+}
+
+static int8_t timezone_index_to_offset(int index)
+{
+    return index - 12;  // 0→-12, 12→0, 26→+14
+}
+
 // Static UI elements
 static lv_obj_t *s_overlay = NULL;           // Semi-transparent background
 static lv_obj_t *s_panel = NULL;             // Main settings panel
@@ -30,6 +48,9 @@ static lv_obj_t *s_radius_label = NULL;      // Radius value label
 
 // Checkboxes
 static lv_obj_t *s_show_labels_cb = NULL;    // Show aircraft labels checkbox
+
+// Dropdowns
+static lv_obj_t *s_timezone_dd = NULL;       // Timezone dropdown
 
 // Buttons
 static lv_obj_t *s_save_btn = NULL;
@@ -189,6 +210,10 @@ static void save_settings(void)
     // Read checkboxes
     bool show_labels = (lv_obj_get_state(s_show_labels_cb) & LV_STATE_CHECKED) != 0;
 
+    // Read dropdown
+    int tz_index = lv_dropdown_get_selected(s_timezone_dd);
+    int8_t timezone_offset = timezone_index_to_offset(tz_index);
+
     // Validate SSID (required if password is set)
     if (strlen(ssid) == 0 && strlen(password) > 0) {
         ESP_LOGW(TAG, "WiFi password set but SSID is empty");
@@ -238,6 +263,7 @@ static void save_settings(void)
     s_current_config.home_lon = lon;
     s_current_config.radar_radius_nm = (int)radius;
     s_current_config.show_aircraft_labels = show_labels;
+    s_current_config.timezone_offset_hours = timezone_offset;
 
     strncpy(s_current_config.display_label, label, sizeof(s_current_config.display_label) - 1);
     s_current_config.display_label[sizeof(s_current_config.display_label) - 1] = '\0';
@@ -296,6 +322,7 @@ static void close_panel(void)
     s_radius_slider = NULL;
     s_radius_label = NULL;
     s_show_labels_cb = NULL;
+    s_timezone_dd = NULL;
     s_save_btn = NULL;
     s_cancel_btn = NULL;
     s_reset_btn = NULL;
@@ -443,6 +470,21 @@ void settings_panel_create(lv_obj_t *parent, const radar_config_t *current_cfg)
     if (s_current_config.show_aircraft_labels) {
         lv_obj_add_state(s_show_labels_cb, LV_STATE_CHECKED);
     }
+
+    // Timezone dropdown
+    lv_obj_t *tz_label = lv_label_create(s_panel);
+    lv_label_set_text(tz_label, "Timezone:");
+    lv_obj_set_style_text_color(tz_label,
+        lv_color_make(COLOR_SWEEP_R, COLOR_SWEEP_G, COLOR_SWEEP_B), 0);
+
+    s_timezone_dd = lv_dropdown_create(s_panel);
+    lv_obj_set_width(s_timezone_dd, LV_PCT(100));
+    lv_dropdown_set_options(s_timezone_dd, TIMEZONE_OPTIONS);
+    lv_dropdown_set_selected(s_timezone_dd,
+        timezone_offset_to_index(s_current_config.timezone_offset_hours));
+    lv_obj_set_style_text_color(s_timezone_dd,
+        lv_color_make(COLOR_SWEEP_R, COLOR_SWEEP_G, COLOR_SWEEP_B), 0);
+    lv_obj_set_style_bg_color(s_timezone_dd, lv_color_make(0x40, 0x40, 0x40), 0);
 
     // Display Label input
     lv_obj_t *label_label = lv_label_create(s_panel);

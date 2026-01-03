@@ -84,3 +84,15 @@ void radar_renderer_debug_overlay(bool enable);
  * @param count Number of aircraft
  */
 void radar_renderer_update_aircraft(const void *aircraft, int count);
+
+/**
+ * @brief Start the clock display timer
+ * Updates clock every 1 second with current UTC time (adjusted by timezone offset)
+ */
+void radar_renderer_start_clock(void);
+
+/**
+ * @brief Set timezone offset for clock display
+ * @param offset_hours Hours offset from UTC (-12 to +14)
+ */
+void radar_renderer_set_timezone(int8_t offset_hours);
